@@ -99,7 +99,9 @@ class BubbleService : Service() {
             } else {
                 WindowManager.LayoutParams.TYPE_PHONE
             },
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
@@ -165,8 +167,9 @@ class BubbleService : Service() {
     }
 
     private fun handleCapture() {
-        val service = AccessibilityService.instance ?: return
-        val text = service.captureText()
+        val service = com.hugecode.buffer.AccessibilityService.instance ?: return
+        val rawText = service.captureText()
+        val text = rawText?.toString()
 
         if (text != null && text.isNotEmpty()) {
             val id = StorageManager.addText(text)
@@ -202,12 +205,12 @@ class BubbleService : Service() {
                 setPadding(16, 8, 16, 8)
 
                 setOnClickListener {
-                    val text = StorageManager.getText(preview.id)
-                    if (text != null) {
-                        val service = AccessibilityService.instance
-                        service?.pasteText(text)
+                    val fullText = StorageManager.getText(preview.id)
+                    if (fullText != null) {
+                        val service = com.hugecode.buffer.AccessibilityService.instance
+                        service?.pasteText(fullText)
                         handler.post {
-                            Toast.makeText(this@BubbleService, "Вставлено ${text.length} симв.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@BubbleService, "Вставлено ${fullText.length} симв.", Toast.LENGTH_SHORT).show()
                             removeBubble()
                         }
                     }
