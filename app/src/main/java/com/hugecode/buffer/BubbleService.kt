@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -49,9 +50,7 @@ class BubbleService : Service() {
         val chId = "hcb_bubble"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(chId, "HCB Bubble", NotificationManager.IMPORTANCE_LOW).apply {
-                    setShowBadge(false)
-                }
+                NotificationChannel(chId, "HCB", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) }
             )
         }
         val pi = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
@@ -80,28 +79,37 @@ class BubbleService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 120
-            y = 400
+            x = 100
+            y = 300
         }
 
         bubbleView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#CC1B5E20"))
-            setPadding(4, 4, 4, 4)
+            background = GradientDrawable().apply {
+                setColor(Color.argb(220, 30, 30, 30))
+                cornerRadius = 60f
+                setStroke(2, Color.argb(80, 255, 255, 255))
+            }
+            setPadding(8, 8, 8, 8)
+            elevation = 24f
             alpha = 0f
-            startAnimation(AlphaAnimation(0f, 1f).apply { duration = 200; fillAfter = true })
 
             addView(TextView(context).apply {
                 actionText = this
-                text = if (mode == "capture") "Захватить" else "Вставить"
+                text = if (mode == "capture") "ЗАХВАТИТЬ" else "ВСТАВИТЬ"
                 setTextColor(Color.WHITE)
-                textSize = 13f
-                setPadding(24, 14, 24, 14)
+                textSize = 12f
+                setPadding(28, 16, 28, 16)
                 gravity = Gravity.CENTER
+                setBackgroundColor(Color.argb(80, 76, 175, 80))
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(200, 76, 175, 80))
+                    cornerRadius = 50f
+                }
                 setOnClickListener {
                     if (!isMoving) {
                         if (mode == "capture") capture() else toggleList()
@@ -113,10 +121,11 @@ class BubbleService : Service() {
                 bubbleList = this
                 orientation = LinearLayout.VERTICAL
                 visibility = View.GONE
+                setPadding(8, 8, 8, 4)
             })
         }
 
-        bubbleView?.setOnTouchListener { view, event ->
+        bubbleView?.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
@@ -129,7 +138,7 @@ class BubbleService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - initialTouchX
                     val dy = event.rawY - initialTouchY
-                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isMoving = true
+                    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isMoving = true
                     params.x = initialX + dx.toInt()
                     params.y = initialY + dy.toInt()
                     wm?.updateViewLayout(bubbleView, params)
@@ -141,13 +150,17 @@ class BubbleService : Service() {
 
         wm?.addView(bubbleView, params)
 
-        val scale = ScaleAnimation(0.5f, 1f, 0.5f, 1f, Animation.RELATIVE_TO_SELF, 0.5f, Animation.RELATIVE_TO_SELF, 0.5f)
-        scale.duration = 200
+        val fadeIn = AlphaAnimation(0f, 1f).apply { duration = 250; fillAfter = true }
+        val scale = ScaleAnimation(0.7f, 1f, 0.7f, 1f, Animation.RELATIVE_TO_SELF, 0.5f, Animation.RELATIVE_TO_SELF, 0.5f).apply { duration = 250 }
+        bubbleView?.startAnimation(fadeIn)
         bubbleView?.startAnimation(scale)
     }
 
     private fun update() {
-        actionText?.text = if (mode == "capture") "Захватить" else "Вставить"
+        actionText?.text = if (mode == "capture") "ЗАХВАТИТЬ" else "ВСТАВИТЬ"
+        (actionText?.background as? GradientDrawable)?.setColor(
+            if (mode == "capture") Color.argb(200, 76, 175, 80) else Color.argb(200, 33, 150, 243)
+        )
         bubbleList?.visibility = View.GONE
         isListShown = false
     }
@@ -173,11 +186,11 @@ class BubbleService : Service() {
         if (text.isNotEmpty()) {
             val id = StorageManager.addText(text)
             handler.post {
-                Toast.makeText(this, "Захвачено #$id (${text.length})", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "OK #$id (${text.length})", Toast.LENGTH_SHORT).show()
                 hide()
             }
         } else {
-            handler.post { Toast.makeText(this, "Ничего не выделено", Toast.LENGTH_SHORT).show() }
+            handler.post { Toast.makeText(this, "Пусто", Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -196,12 +209,16 @@ class BubbleService : Service() {
         }
         for (p in previews) {
             list.addView(TextView(this).apply {
-                text = "#${p.id} ${p.preview}"
+                text = "${p.preview}"
                 setTextColor(Color.WHITE)
                 textSize = 11f
-                setPadding(20, 10, 20, 10)
-                setBackgroundColor(Color.parseColor("#33FFFFFF"))
-                (layoutParams as LinearLayout.LayoutParams).topMargin = 4
+                setPadding(16, 10, 16, 10)
+                setBackgroundColor(Color.argb(60, 255, 255, 255))
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(60, 255, 255, 255))
+                    cornerRadius = 30f
+                }
+                (layoutParams as LinearLayout.LayoutParams).topMargin = 6
                 setOnClickListener {
                     val full = StorageManager.getText(p.id)
                     if (full != null) {
@@ -219,7 +236,7 @@ class BubbleService : Service() {
                             }
                         }
                         handler.post {
-                            Toast.makeText(this@BubbleService, "Вставлено (${full.length})", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@BubbleService, "OK (${full.length})", Toast.LENGTH_SHORT).show()
                             hide()
                         }
                     }
