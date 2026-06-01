@@ -19,141 +19,138 @@ import android.widget.Toast
 class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var countText: TextView
+    private lateinit var statusText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         StorageManager.init(this)
 
-        val layout = LinearLayout(this).apply {
+        val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
+            setPadding(48, 64, 48, 48)
+            setBackgroundColor(if (isDark) 0xFF121212.toInt() else 0xFFF5F5F5.toInt())
         }
 
-        val title = TextView(this).apply {
-            text = "HCB Smart Buffer"
-            textSize = 22f
-            setPadding(0, 0, 0, 16)
-        }
-        layout.addView(title)
+        root.addView(TextView(this).apply {
+            text = "HCB Smart"
+            textSize = 28f
+            setTextColor(if (isDark) 0xFFFFFFFF.toInt() else 0xFF1B5E20.toInt())
+            setPadding(0, 0, 0, 8)
+        })
 
-        val statusText = TextView(this).apply {
-            text = if (isAccessibilityEnabled()) "● Служба активна" else "○ Служба не активна"
+        root.addView(TextView(this).apply {
+            text = "Умный буфер обмена"
             textSize = 14f
+            setTextColor(if (isDark) 0xFFAAAAAA.toInt() else 0xFF666666.toInt())
+            setPadding(0, 0, 0, 32)
+        })
+
+        val accEnabled = isAccessibilityEnabled()
+        statusText = TextView(this).apply {
+            text = if (accEnabled) "● Служба активна" else "○ Служба не активна"
+            textSize = 14f
+            setTextColor(if (accEnabled) 0xFF4CAF50.toInt() else 0xFFFF5252.toInt())
             setPadding(0, 0, 0, 8)
         }
-        layout.addView(statusText)
+        root.addView(statusText)
 
-        val countText = TextView(this).apply {
-            text = "Записей: ${StorageManager.getCount()}"
+        countText = TextView(this).apply {
+            text = "Сохранено: ${StorageManager.getCount()}"
             textSize = 14f
-            setPadding(0, 0, 0, 16)
+            setTextColor(if (isDark) 0xFFCCCCCC.toInt() else 0xFF444444.toInt())
+            setPadding(0, 0, 0, 32)
         }
-        layout.addView(countText)
+        root.addView(countText)
 
-        if (!isAccessibilityEnabled()) {
-            val enableButton = Button(this).apply {
-                text = "Включить службу"
-                setOnClickListener {
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-            }
-            layout.addView(enableButton)
+        if (!accEnabled) {
+            root.addView(makeButton("Включить службу", 0xFF1B5E20.toInt()) {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            })
+            root.addView(gap())
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            val overlayButton = Button(this).apply {
-                text = "Разрешить поверх других приложений"
-                setOnClickListener {
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:com.hugecode.buffer")
-                    )
-                    startActivity(intent)
-                }
-            }
-            layout.addView(overlayButton)
+            root.addView(makeButton("Разрешить оверлей", 0xFF0D3B0F.toInt()) {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:com.hugecode.buffer")))
+            })
+            root.addView(gap())
         }
 
-        val showButton = Button(this).apply {
-            text = "Показать все записи"
-            setOnClickListener { showAllItems() }
-        }
-        layout.addView(showButton)
+        root.addView(makeButton("Все записи", 0xFF2E7D32.toInt()) { showAllItems() })
+        root.addView(gap())
+        root.addView(makeButton("Очистить всё", 0xFFC62828.toInt()) {
+            StorageManager.clearAll()
+            countText.text = "Сохранено: 0"
+            Toast.makeText(this, "Очищено", Toast.LENGTH_SHORT).show()
+        })
 
-        val clearButton = Button(this).apply {
-            text = "Очистить всё"
-            setOnClickListener {
-                StorageManager.clearAll()
-                countText.text = "Записей: 0"
-                Toast.makeText(this@MainActivity, "Буфер очищен", Toast.LENGTH_SHORT).show()
-            }
-        }
-        layout.addView(clearButton)
+        setContentView(root)
+    }
 
-        setContentView(layout)
+    private fun makeButton(text: String, color: Int, click: () -> Unit): Button {
+        return Button(this).apply {
+            this.text = text
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 14f
+            setBackgroundColor(color)
+            setPadding(32, 20, 32, 20)
+            setOnClickListener { click() }
+        }
+    }
+
+    private fun gap(): LinearLayout {
+        return LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 16)
+        }
     }
 
     private fun isAccessibilityEnabled(): Boolean {
-        val service = "$packageName/.AccessibilityService"
-        val enabledServices = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
-        return enabledServices.contains(service) || enabledServices.contains("com.hugecode.buffer")
+        val svc = "$packageName/.AccessibilityService"
+        val list = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+        return list.contains(svc)
     }
 
     private fun showAllItems() {
         val previews = StorageManager.getAllPreviews()
-
         if (previews.isEmpty()) {
-            Toast.makeText(this, "Буфер пуст", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Пусто", Toast.LENGTH_SHORT).show()
             return
         }
-
-        val items = previews.map { "#${it.id} · ${it.length} симв.\n${it.preview}" }.toTypedArray()
-
+        val items = previews.map { "#${it.id} (${it.length} симв.)\n${it.preview}" }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("Все записи (${previews.size})")
-            .setItems(items) { _, which ->
-                val preview = previews[which]
+            .setTitle("Записи (${previews.size})")
+            .setItems(items) { _, i ->
                 Thread {
-                    val text = StorageManager.getText(preview.id)
-                    handler.post {
-                        if (text != null) {
-                            showTextDialog(preview.id, text)
-                        }
-                    }
+                    val txt = StorageManager.getText(previews[i].id)
+                    handler.post { if (txt != null) showText(previews[i].id, txt) }
                 }.start()
             }
             .setNegativeButton("Закрыть", null)
             .show()
     }
 
-    private fun showTextDialog(id: Int, text: String) {
-        val scrollView = ScrollView(this)
-        val textView = TextView(this).apply {
+    private fun showText(id: Int, text: String) {
+        val sv = ScrollView(this)
+        val tv = TextView(this).apply {
             this.text = text
             textSize = 12f
-            setPadding(16, 16, 16, 16)
+            setPadding(24, 24, 24, 24)
             setTextIsSelectable(true)
             movementMethod = ScrollingMovementMethod()
         }
-        scrollView.addView(textView)
-
+        sv.addView(tv)
         AlertDialog.Builder(this)
-            .setTitle("Запись #$id")
-            .setView(scrollView)
+            .setTitle("#$id (${text.length} симв.)")
+            .setView(sv)
             .setPositiveButton("Удалить") { _, _ ->
                 StorageManager.deleteItem(id)
+                countText.text = "Сохранено: ${StorageManager.getCount()}"
                 Toast.makeText(this, "Удалено", Toast.LENGTH_SHORT).show()
             }
             .setNeutralButton("Закрыть", null)
             .show()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        recreate()
     }
 }
