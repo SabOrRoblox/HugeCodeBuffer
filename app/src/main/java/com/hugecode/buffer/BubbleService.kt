@@ -167,8 +167,8 @@ class BubbleService : Service() {
     }
 
     private fun handleCapture() {
-        val service = com.hugecode.buffer.AccessibilityService.instance ?: return
-        val rawText = service.captureText()
+        val accService = AccessibilityService.instance ?: return
+        val rawText = accService.captureText()
         val text = rawText?.toString()
 
         if (text != null && text.isNotEmpty()) {
@@ -207,8 +207,8 @@ class BubbleService : Service() {
                 setOnClickListener {
                     val fullText = StorageManager.getText(preview.id)
                     if (fullText != null) {
-                        val service = com.hugecode.buffer.AccessibilityService.instance
-                        service?.pasteText(fullText)
+                        val accService = AccessibilityService.instance
+                        accService?.pasteText(fullText)
                         handler.post {
                             Toast.makeText(this@BubbleService, "Вставлено ${fullText.length} симв.", Toast.LENGTH_SHORT).show()
                             removeBubble()
