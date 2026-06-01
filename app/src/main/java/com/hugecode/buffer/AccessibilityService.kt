@@ -2,6 +2,7 @@ package com.hugecode.buffer
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -42,12 +43,19 @@ class AccessibilityService : AccessibilityService() {
 
         if (focusedNode == null) {
             hideBubble()
+            root.recycle()
             return
         }
 
         val selectedText = try {
-            if (focusedNode.text != null && focusedNode.textSelectionStart >= 0 && focusedNode.textSelectionEnd > focusedNode.textSelectionStart) {
-                focusedNode.text.toString().substring(focusedNode.textSelectionStart, focusedNode.textSelectionEnd)
+            if (focusedNode.text != null &&
+                focusedNode.textSelectionStart >= 0 &&
+                focusedNode.textSelectionEnd > focusedNode.textSelectionStart
+            ) {
+                focusedNode.text.toString().substring(
+                    focusedNode.textSelectionStart,
+                    focusedNode.textSelectionEnd
+                )
             } else {
                 null
             }
@@ -100,17 +108,26 @@ class AccessibilityService : AccessibilityService() {
     }
 
     fun captureText(): String? {
-        val root = rootInActiveWindow ?: return null
+        val root = rootInActiveWindow ?: return lastSelectedText
         val focusedNode = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
         val text = try {
-            if (focusedNode != null && focusedNode.text != null && focusedNode.textSelectionStart >= 0 && focusedNode.textSelectionEnd > focusedNode.textSelectionStart) {
-                focusedNode.text.toString().substring(focusedNode.textSelectionStart, focusedNode.textSelectionEnd)
+            if (focusedNode != null &&
+                focusedNode.text != null &&
+                focusedNode.textSelectionStart >= 0 &&
+                focusedNode.textSelectionEnd > focusedNode.textSelectionStart
+            ) {
+                focusedNode.text.toString().substring(
+                    focusedNode.textSelectionStart,
+                    focusedNode.textSelectionEnd
+                )
             } else {
                 lastSelectedText
             }
         } catch (e: Exception) {
             lastSelectedText
         }
+
         root.recycle()
         return text
     }
@@ -120,8 +137,11 @@ class AccessibilityService : AccessibilityService() {
         val focusedNode = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
 
         if (focusedNode != null && focusedNode.isEditable) {
-            val arguments = android.os.Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            val arguments = Bundle().apply {
+                putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    text
+                )
             }
             focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
         }
