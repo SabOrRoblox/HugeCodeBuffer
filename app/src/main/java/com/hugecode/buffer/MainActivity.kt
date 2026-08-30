@@ -12,6 +12,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        StorageManager.init(this)
+        
         ignoreBatteryOptimization()
         
         hideAppIcon()
@@ -27,7 +29,7 @@ class MainActivity : Activity() {
                 val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                 intent.data = Uri.parse("package:$packageName")
                 startActivity(intent)
-            } catch (e: Exception) {}
+            } catch (_: Exception) {}
         }
     }
     
@@ -38,6 +40,6 @@ class MainActivity : Activity() {
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP
             )
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
     }
 }
