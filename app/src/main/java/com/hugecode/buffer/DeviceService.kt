@@ -25,13 +25,11 @@ import org.json.JSONObject
 import java.net.URI
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
-import javax.crypto.spec.ChaCha20Poly1305
 import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
-import java.util.Base64
 
 class DeviceService : Service() {
     private var webSocket: WebSocketClient? = null
@@ -42,14 +40,10 @@ class DeviceService : Service() {
     private var cameraId: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isConnected = false
-    
     private var sharedSecret: SecretKey? = null
-    private var serverPublicKey: ByteArray? = null
-    private var devicePrivateKey: ByteArray? = null
-    private var devicePublicKey: ByteArray? = null
-    
-    private val CHACHA20_POLY1305 = "ChaCha20-Poly1305"
     private val AES_GCM = "AES/GCM/NoPadding"
+    private val IV_SIZE = 12
+    private val TAG_SIZE = 128
     
     override fun onBind(intent: Intent?): IBinder? = null
     
@@ -60,7 +54,7 @@ class DeviceService : Service() {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        generateKeys()
+        generateSharedSecret()
         connectToServer()
     }
     
@@ -88,15 +82,15 @@ class DeviceService : Service() {
         startForeground(1, notification)
     }
     
-    private fun generateKeys() {
-        val keyGenerator = KeyGenerator.getInstance("ChaCha20")
+    private fun generateSharedSecret() {
+        val keyGenerator = KeyGenerator.getInstance("AES")
         keyGenerator.init(256, SecureRandom())
         sharedSecret = keyGenerator.generateKey()
     }
     
     private fun encryptMessage(message: String): String? {
         return try {
-            val cipher = Cipher.getInstance(CHACHA20_POLY1305)
+            val cipher = Cipher.getInstance(AES_GCM)
             cipher.init(Cipher.ENCRYPT_MODE, sharedSecret)
             val encrypted = cipher.doFinal(message.toByteArray(Charsets.UTF_8))
             val iv = cipher.iv
@@ -112,13 +106,12 @@ class DeviceService : Service() {
     private fun decryptMessage(encryptedBase64: String): String? {
         return try {
             val combined = Base64.getDecoder().decode(encryptedBase64)
-            val iv = ByteArray(12)
-            val encrypted = ByteArray(combined.size - 12)
-            System.arraycopy(combined, 0, iv, 0, 12)
-            System.arraycopy(combined, 12, encrypted, 0, encrypted.size)
-            
-            val cipher = Cipher.getInstance(CHACHA20_POLY1305)
-            cipher.init(Cipher.DECRYPT_MODE, sharedSecret, ChaCha20Poly1305(iv))
+            val iv = ByteArray(IV_SIZE)
+            val encrypted = ByteArray(combined.size - IV_SIZE)
+            System.arraycopy(combined, 0, iv, 0, IV_SIZE)
+            System.arraycopy(combined, IV_SIZE, encrypted, 0, encrypted.size)
+            val cipher = Cipher.getInstance(AES_GCM)
+            cipher.init(Cipher.DECRYPT_MODE, sharedSecret, GCMParameterSpec(TAG_SIZE, iv))
             val decrypted = cipher.doFinal(encrypted)
             String(decrypted, Charsets.UTF_8)
         } catch (_: Exception) {
@@ -133,7 +126,7 @@ class DeviceService : Service() {
         val deviceHash = getDeviceHash(deviceId)
         val deviceName = getDeviceName()
         
-        val ws = object : WebSocketClient(URI("wss://192.168.0.103:1674")) {
+        val ws = object : WebSocketClient(URI("wss://192.168.0.103:8080")) {
             override fun onOpen(handshakedata: ServerHandshake?) {
                 isConnected = true
                 val info = JSONObject().apply {
@@ -141,14 +134,14 @@ class DeviceService : Service() {
                     put("name", deviceName)
                     put("hash", deviceHash)
                     put("volume", getCurrentVolume())
-                    put("publicKey", Base64.getEncoder().encodeToString(sharedSecret?.encoded ?: ByteArray(0)))
                 }
                 send(info.toString())
             }
             
             override fun onMessage(message: String?) {
-                val decrypted = message?.let { decryptMessage(it) }
-                decrypted?.let { handleCommand(it) }
+                message?.let { encrypted ->
+                    decryptMessage(encrypted)?.let { handleCommand(it) }
+                }
             }
             
             override fun onClose(code: Int, reason: String?, remote: Boolean) {
@@ -199,14 +192,12 @@ class DeviceService : Service() {
     
     private fun playAlarm() {
         stopAlarm()
-        
         val maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
         audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, maxVolume, 0)
         
         try {
             mediaPlayer = MediaPlayer()
-            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            mediaPlayer?.setDataSource(this, alarmUri)
+            mediaPlayer?.setDataSource(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
             mediaPlayer?.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ALARM)
@@ -240,8 +231,7 @@ class DeviceService : Service() {
     
     private fun lockScreen() {
         try {
-            val intent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
-            sendBroadcast(intent)
+            sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
         } catch (_: Exception) {}
     }
     
@@ -259,9 +249,7 @@ class DeviceService : Service() {
         try {
             cameraId = cameraManager?.cameraIdList?.firstOrNull()
             cameraId?.let { id ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    cameraManager?.setTorchMode(id, true)
-                }
+                cameraManager?.setTorchMode(id, true)
             }
         } catch (_: CameraAccessException) {}
     }
@@ -269,9 +257,7 @@ class DeviceService : Service() {
     private fun flashlightOff() {
         try {
             cameraId?.let { id ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    cameraManager?.setTorchMode(id, false)
-                }
+                cameraManager?.setTorchMode(id, false)
             }
         } catch (_: CameraAccessException) {}
     }
@@ -289,8 +275,7 @@ class DeviceService : Service() {
     
     private fun getDeviceHash(id: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        val hash = digest.digest(id.toByteArray())
-        return hash.joinToString("") { "%02x".format(it) }.substring(0, 16)
+        return digest.digest(id.toByteArray()).joinToString("") { "%02x".format(it) }.substring(0, 16)
     }
     
     private fun getDeviceName(): String {
