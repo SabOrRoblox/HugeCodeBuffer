@@ -8,8 +8,7 @@ import java.security.MessageDigest
 import java.util.Base64
 
 object SecurityManager {
-    
-    private const val EXPECTED_SIGNATURE = "2ba15966463c64ec7a8c0f1fcf47d6a9dd49fc8cd0729dca4e4364808cdb5d95"
+    private const val EXPECTED_SIGNATURE = "b02fba9cd256597c4a954356690a2f0ee0a83df45bfc5491d66a1b87429505ab"
     private const val LICENSE_KEY = "ea5d3866e5a3c83716a6bad64df8a9bb2ef32e8bf705b975a474dc13dfd2636f"
     private const val LICENSE_SALT = "f2ff223a7d8ee77a26fee55ca1a78455e1cdc9bbd3fb82aa128d77279d6cb0d9"
     
