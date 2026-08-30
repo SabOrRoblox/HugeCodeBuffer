@@ -19,6 +19,8 @@
     <uses-permission android:name="android.permission.QUICKBOOT_POWERON" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.DEVICE_POWER" />
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
+    <uses-permission android:name="android.permission.RUN_IN_BACKGROUND" />
     
     <application
         android:allowBackup="false"
@@ -60,6 +62,11 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+        
+        <receiver
+            android:name=".RestartReceiver"
+            android:enabled="true"
+            android:exported="false" />
             
     </application>
 </manifest>
