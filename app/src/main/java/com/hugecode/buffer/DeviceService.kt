@@ -72,7 +72,7 @@ class DeviceService : Service() {
         val deviceHash = getDeviceHash(deviceId)
         val deviceName = getDeviceName()
         
-        val ws = object : WebSocketClient(URI("ws://192.168.0.103:8080")) {
+        val ws = object : WebSocketClient(URI("ws://192.168.0.103:7611")) {
             override fun onOpen(handshakedata: ServerHandshake?) {
                 isConnected = true
                 val info = JSONObject().apply {
@@ -172,16 +172,10 @@ class DeviceService : Service() {
     }
     
     private fun lockScreen() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         try {
-            @Suppress("DEPRECATION")
-            powerManager.goToSleep(System.currentTimeMillis())
-        } catch (e: Exception) {
-            try {
-                val intent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
-                sendBroadcast(intent)
-            } catch (e2: Exception) {}
-        }
+            val intent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+            sendBroadcast(intent)
+        } catch (e: Exception) {}
     }
     
     private fun wakeDevice() {
