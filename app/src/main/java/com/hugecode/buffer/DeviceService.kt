@@ -55,11 +55,11 @@ class DeviceService : Service() {
     }
     
     private fun connectToServer() {
-        val deviceId = getDeviceId()
+        val deviceId = getAndroidDeviceId()
         val deviceHash = getDeviceHash(deviceId)
         val deviceName = getDeviceName()
         
-        val ws = object : WebSocketClient(URI("ws://192.168.0.1:6780")) {
+        val ws = object : WebSocketClient(URI("ws://192.168.0.1:7611")) {
             override fun onOpen(handshakedata: ServerHandshake?) {
                 val info = JSONObject().apply {
                     put("type", "deviceInfo")
@@ -156,7 +156,7 @@ class DeviceService : Service() {
         }
     }
     
-    private fun getDeviceId(): String {
+    private fun getAndroidDeviceId(): String {
         return Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
     }
     
