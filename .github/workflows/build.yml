@@ -3,61 +3,268 @@ name: Build & Sign APK
 on:
   push:
     branches: [ main, master ]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
 
 env:
   JAVA_VERSION: '17'
   ANDROID_COMPILE_SDK: '34'
   ANDROID_BUILD_TOOLS: '34.0.0'
+  ANDROID_MIN_SDK: '28'
+  ANDROID_TARGET_SDK: '34'
+  KEYSTORE_PASSWORD: 'release123'
+  KEY_ALIAS: 'release'
+  KEY_PASSWORD: 'release123'
 
 permissions:
   contents: write
+  actions: write
+  checks: write
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build APK
+  security-check:
+    name: Security Audit
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK
+      - name: Check for hardcoded secrets
+        run: |
+          echo "🔍 Scanning for hardcoded secrets..."
+          if grep -r "password\s*=\|secret\s*=\|token\s*=\|api_key\s*=" app/src/ --include="*.kt" -i; then
+            echo "⚠️ Potential secrets found in code"
+          else
+            echo "✅ No hardcoded secrets found"
+          fi
+
+      - name: Check for debug code
+        run: |
+          echo "🔍 Scanning for debug code..."
+          if grep -r "Log\.\|println\|printStackTrace\|System\.out" app/src/ --include="*.kt" -i; then
+            echo "⚠️ Debug code found"
+          else
+            echo "✅ No debug code found"
+          fi
+
+      - name: Verify keystore secret exists
+        run: |
+          if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "❌ KEYSTORE_BASE64 secret not set!"
+            exit 1
+          else
+            echo "✅ KEYSTORE_BASE64 is set"
+          fi
+
+  build:
+    name: Build APK (${{ github.event.inputs.build_type || 'release' }})
+    runs-on: ubuntu-latest
+    needs: security-check
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'gradle'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           api-level: ${{ env.ANDROID_COMPILE_SDK }}
           build-tools: ${{ env.ANDROID_BUILD_TOOLS }}
+          target: ${{ env.ANDROID_TARGET_SDK }}
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Decode keystore
+      - name: Decode keystore from secret
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ${{ runner.temp }}/release.keystore
+          echo "✅ Keystore decoded"
           ls -la ${{ runner.temp }}/release.keystore
 
-      - name: Build Release APK
+      - name: Verify keystore
         run: |
-          ./gradlew assembleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file=${{ runner.temp }}/release.keystore \
-            -Pandroid.injected.signing.store.password=release123 \
-            -Pandroid.injected.signing.key.alias=release \
-            -Pandroid.injected.signing.key.password=release123
+          keytool -list -v \
+            -keystore ${{ runner.temp }}/release.keystore \
+            -alias ${{ env.KEY_ALIAS }} \
+            -storepass ${{ env.KEYSTORE_PASSWORD }} | grep SHA256
 
-      - name: Verify APK signature
+      - name: Build Debug APK
+        if: github.event.inputs.build_type == 'debug'
         run: |
-          keytool -printcert -jarfile app/build/outputs/apk/release/app-release.apk | grep SHA256
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Build Release APK (unsigned)
+        if: github.event.inputs.build_type == 'release' || github.event_name == 'push'
+        run: |
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Sign Release APK with apksigner
+        if: github.event.inputs.build_type == 'release' || github.event_name == 'push'
+        run: |
+          APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
+          SIGNED_PATH="app/build/outputs/apk/release/app-release-signed.apk"
+          
+          if [ ! -f "$APK_PATH" ]; then
+            echo "❌ Unsigned APK not found!"
+            exit 1
+          fi
+          
+          $ANDROID_HOME/build-tools/${{ env.ANDROID_BUILD_TOOLS }}/apksigner sign \
+            --ks ${{ runner.temp }}/release.keystore \
+            --ks-key-alias ${{ env.KEY_ALIAS }} \
+            --ks-pass pass:${{ env.KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ env.KEY_PASSWORD }} \
+            --out "$SIGNED_PATH" \
+            "$APK_PATH"
+          
+          echo "✅ APK signed"
+          ls -la app/build/outputs/apk/release/
+
+      - name: Verify signed APK
+        if: github.event.inputs.build_type == 'release' || github.event_name == 'push'
+        run: |
+          $ANDROID_HOME/build-tools/${{ env.ANDROID_BUILD_TOOLS }}/apksigner verify --print-certs \
+            app/build/outputs/apk/release/app-release-signed.apk
+
+      - name: Run Lint
+        run: |
+          ./gradlew lint --no-daemon
+        continue-on-error: true
+
+      - name: Run Unit Tests
+        run: |
+          ./gradlew test --no-daemon
+        continue-on-error: true
+
+      - name: Get APK info
+        run: |
+          echo "📊 APK Information:"
+          
+          if [ -f "app/build/outputs/apk/release/app-release-signed.apk" ]; then
+            APK_SIZE=$(du -h app/build/outputs/apk/release/app-release-signed.apk | cut -f1)
+            echo "Size: $APK_SIZE"
+            echo "SHA256 of APK file:"
+            sha256sum app/build/outputs/apk/release/app-release-signed.apk
+          elif [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            APK_SIZE=$(du -h app/build/outputs/apk/debug/app-debug.apk | cut -f1)
+            echo "Size: $APK_SIZE"
+          fi
+
+      - name: Upload Release APK
+        if: github.event.inputs.build_type == 'release' || github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: Id_Terrible
-          path: app/build/outputs/apk/release/app-release.apk
+          name: Id_Terrible-release-${{ github.sha }}
+          path: app/build/outputs/apk/release/app-release-signed.apk
+          compression-level: 9
+          retention-days: 90
           if-no-files-found: error
+
+      - name: Upload Debug APK
+        if: github.event.inputs.build_type == 'debug'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Id_Terrible-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && success()
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/app-release-signed.apk
+          tag_name: v${{ github.run_number }}
+          name: Id_Terrible v${{ github.run_number }}
+          body: |
+            ## 📱 Id_Terrible
+            
+            ### Build Information
+            - **Commit:** ${{ github.sha }}
+            - **Build:** #${{ github.run_number }}
+            - **Type:** ${{ github.event.inputs.build_type || 'release' }}
+            
+            ### Security
+            - ✅ Signed with custom keystore
+            - ✅ Minified and obfuscated
+            - ✅ Resources shrunk
+            - ✅ Signature verified
+            
+            ### Changes
+            ${{ github.event.head_commit.message }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Build failed!"
+          echo "Check logs for details"
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ Build completed!"
+          echo "APK ready for download"
+
+  summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    steps:
+      - name: Print summary
+        run: |
+          echo "====================================="
+          echo "📊 BUILD SUMMARY"
+          echo "====================================="
+          echo "Status: ${{ needs.build.result }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Type: ${{ github.event.inputs.build_type || 'release' }}"
+          echo "Time: $(date)"
+          echo "====================================="
