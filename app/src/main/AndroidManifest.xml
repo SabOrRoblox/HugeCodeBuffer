@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -16,14 +17,15 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FLASHLIGHT" />
     <uses-permission android:name="android.permission.QUICKBOOT_POWERON" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.DEVICE_POWER" />
     
     <application
         android:allowBackup="false"
         android:icon="@drawable/ic_launcher"
         android:label="Local System"
-        android:usesCleartextTraffic="false"
-        android:theme="@android:style/Theme.Translucent.NoTitleBar"
-        tools:ignore="MissingApplicationIcon">
+        android:usesCleartextTraffic="true"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar">
         
         <activity
             android:name=".MainActivity"
@@ -34,12 +36,16 @@
             android:launchMode="singleInstance"
             android:finishOnTaskLaunch="true"
             android:stateNotNeeded="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
         </activity>
         
         <service
             android:name=".DeviceService"
             android:enabled="true"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="mediaPlayback|dataSync"
             android:stopWithTask="false">
         </service>
