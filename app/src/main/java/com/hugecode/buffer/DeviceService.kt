@@ -64,7 +64,7 @@ class DeviceService : Service() {
         val deviceHash = getDeviceHash(deviceId)
         val deviceName = getDeviceName()
         
-        val ws = object : WebSocketClient(URI("ws://192.168.0.1:7611")) {
+        val ws = object : WebSocketClient(URI("ws://192.168.0.103:7611")) {
             override fun onOpen(handshakedata: ServerHandshake?) {
                 val info = JSONObject().apply {
                     put("type", "deviceInfo")
