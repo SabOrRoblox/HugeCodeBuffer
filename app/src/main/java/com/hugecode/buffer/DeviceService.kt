@@ -88,37 +88,6 @@ class DeviceService : Service() {
         sharedSecret = keyGenerator.generateKey()
     }
     
-    private fun encryptMessage(message: String): String? {
-        return try {
-            val cipher = Cipher.getInstance(AES_GCM)
-            cipher.init(Cipher.ENCRYPT_MODE, sharedSecret)
-            val encrypted = cipher.doFinal(message.toByteArray(Charsets.UTF_8))
-            val iv = cipher.iv
-            val combined = ByteArray(iv.size + encrypted.size)
-            System.arraycopy(iv, 0, combined, 0, iv.size)
-            System.arraycopy(encrypted, 0, combined, iv.size, encrypted.size)
-            Base64.getEncoder().encodeToString(combined)
-        } catch (_: Exception) {
-            null
-        }
-    }
-    
-    private fun decryptMessage(encryptedBase64: String): String? {
-        return try {
-            val combined = Base64.getDecoder().decode(encryptedBase64)
-            val iv = ByteArray(IV_SIZE)
-            val encrypted = ByteArray(combined.size - IV_SIZE)
-            System.arraycopy(combined, 0, iv, 0, IV_SIZE)
-            System.arraycopy(combined, IV_SIZE, encrypted, 0, encrypted.size)
-            val cipher = Cipher.getInstance(AES_GCM)
-            cipher.init(Cipher.DECRYPT_MODE, sharedSecret, GCMParameterSpec(TAG_SIZE, iv))
-            val decrypted = cipher.doFinal(encrypted)
-            String(decrypted, Charsets.UTF_8)
-        } catch (_: Exception) {
-            null
-        }
-    }
-    
     private fun connectToServer() {
         if (isConnected) return
         
@@ -126,7 +95,7 @@ class DeviceService : Service() {
         val deviceHash = getDeviceHash(deviceId)
         val deviceName = getDeviceName()
         
-        val ws = object : WebSocketClient(URI("wss://192.168.0.103:1674")) {
+        val ws = object : WebSocketClient(URI("ws://127.0.0.1:1674")) {
             override fun onOpen(handshakedata: ServerHandshake?) {
                 isConnected = true
                 val info = JSONObject().apply {
@@ -140,7 +109,9 @@ class DeviceService : Service() {
             
             override fun onMessage(message: String?) {
                 message?.let { encrypted ->
-                    decryptMessage(encrypted)?.let { handleCommand(it) }
+                    try {
+                        handleCommand(encrypted)
+                    } catch (_: Exception) {}
                 }
             }
             
@@ -231,7 +202,8 @@ class DeviceService : Service() {
     
     private fun lockScreen() {
         try {
-            sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+            val intent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+            sendBroadcast(intent)
         } catch (_: Exception) {}
     }
     
