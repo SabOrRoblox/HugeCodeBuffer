@@ -12,6 +12,7 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -24,26 +25,18 @@ import org.java_websocket.handshake.ServerHandshake
 import org.json.JSONObject
 import java.net.URI
 import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 class DeviceService : Service() {
     private var webSocket: WebSocketClient? = null
     private var mediaPlayer: MediaPlayer? = null
+    private var toneGenerator: ToneGenerator? = null
     private var audioManager: AudioManager? = null
     private var vibrator: Vibrator? = null
     private var cameraManager: CameraManager? = null
     private var cameraId: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isConnected = false
-    private var sharedSecret: SecretKey? = null
-    private val AES_GCM = "AES/GCM/NoPadding"
-    private val IV_SIZE = 12
-    private val TAG_SIZE = 128
+    private var originalVolume = 0
     
     override fun onBind(intent: Intent?): IBinder? = null
     
@@ -54,7 +47,6 @@ class DeviceService : Service() {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        generateSharedSecret()
         connectToServer()
     }
     
@@ -74,18 +66,12 @@ class DeviceService : Service() {
         notificationManager.createNotificationChannel(channel)
         
         val notification = Notification.Builder(this, channelId)
-            .setContentTitle("Local System")
+            .setContentTitle("Id_Terrible")
             .setContentText("Running")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .build()
         
         startForeground(1, notification)
-    }
-    
-    private fun generateSharedSecret() {
-        val keyGenerator = KeyGenerator.getInstance("AES")
-        keyGenerator.init(256, SecureRandom())
-        sharedSecret = keyGenerator.generateKey()
     }
     
     private fun connectToServer() {
@@ -108,11 +94,7 @@ class DeviceService : Service() {
             }
             
             override fun onMessage(message: String?) {
-                message?.let { encrypted ->
-                    try {
-                        handleCommand(encrypted)
-                    } catch (_: Exception) {}
-                }
+                message?.let { handleCommand(it) }
             }
             
             override fun onClose(code: Int, reason: String?, remote: Boolean) {
@@ -163,47 +145,44 @@ class DeviceService : Service() {
     
     private fun playAlarm() {
         stopAlarm()
+        
+        originalVolume = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
         val maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
         audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, maxVolume, 0)
         
-        try {
-            mediaPlayer = MediaPlayer()
-            mediaPlayer?.setDataSource(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
-            mediaPlayer?.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            mediaPlayer?.isLooping = false
-            mediaPlayer?.prepare()
-            mediaPlayer?.start()
-        } catch (_: Exception) {}
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 500, 500), 0))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator?.vibrate(longArrayOf(0, 500, 500), 0)
-        }
-        
         serviceScope.launch {
-            delay(3000)
-            stopAlarm()
+            repeat(10) { i ->
+                toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+                toneGenerator?.startTone(ToneGenerator.TONE_SUP_ERROR, 150)
+                
+                vibrator?.vibrate(VibrationEffect.createOneShot(150, VibrationEffect.DEFAULT_AMPLITUDE))
+                
+                delay(200)
+                
+                toneGenerator?.stopTone()
+                toneGenerator?.release()
+                toneGenerator = null
+            }
+            
+            audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
         }
     }
     
     private fun stopAlarm() {
-        mediaPlayer?.stop()
-        mediaPlayer?.release()
-        mediaPlayer = null
+        toneGenerator?.stopTone()
+        toneGenerator?.release()
+        toneGenerator = null
         vibrator?.cancel()
+        audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
     }
     
     private fun lockScreen() {
         try {
-            val intent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
-            sendBroadcast(intent)
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (powerManager.isInteractive) {
+                val intent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+                sendBroadcast(intent)
+            }
         } catch (_: Exception) {}
     }
     
@@ -211,7 +190,7 @@ class DeviceService : Service() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = powerManager.newWakeLock(
             PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-            "LocalSystem:WakeLock"
+            "Id_Terrible:WakeLock"
         )
         wakeLock.acquire(5000)
         wakeLock.release()
