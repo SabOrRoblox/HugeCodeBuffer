@@ -35,6 +35,11 @@ class DeviceService : Service() {
         connectToServer()
     }
     
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        return START_STICKY
+    }
+    
     private fun startForegroundService() {
         val channelId = "device_control"
         val channel = NotificationChannel(
