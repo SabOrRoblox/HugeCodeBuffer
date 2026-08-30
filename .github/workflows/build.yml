@@ -4,15 +4,6 @@ on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: true
-        default: 'release'
-        type: choice
-        options:
-          - release
-          - debug
 
 env:
   JAVA_VERSION: '17'
@@ -55,7 +46,6 @@ jobs:
           ./gradlew assembleRelease \
             --no-daemon \
             --stacktrace \
-            --info \
             2>&1 | tee build.log
         continue-on-error: true
 
@@ -63,7 +53,7 @@ jobs:
         if: failure()
         run: |
           echo "=== KOTLIN ERRORS ==="
-          grep -A 5 "e: " build.log || echo "No Kotlin errors found"
+          grep -A 3 "e: " build.log || echo "No Kotlin errors found"
           echo "=== FULL ERROR ==="
           grep -B 2 -A 10 "FAILED" build.log || echo "No failed tasks"
 
@@ -77,7 +67,7 @@ jobs:
             -validity 10000 \
             -storepass ${{ env.KEYSTORE_PASSWORD }} \
             -keypass ${{ env.KEY_PASSWORD }} \
-            -dname "CN=Device Control, OU=Dev, O=Dev, L=City, S=State, C=US" \
+            -dname "CN=Local System, OU=System, O=System, L=City, S=State, C=US" \
             -noprompt
 
       - name: Build Release APK
@@ -91,6 +81,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: device-control
+          name: local-system
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
