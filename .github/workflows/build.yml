@@ -1,28 +1,329 @@
-name: Build APK
+name: Build & Sign APK
+
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
+      upload_artifact:
+        description: 'Upload APK as artifact'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  JAVA_VERSION: '17'
+  GRADLE_VERSION: '8.13'
+  ANDROID_COMPILE_SDK: '34'
+  ANDROID_BUILD_TOOLS: '34.0.0'
+  ANDROID_MIN_SDK: '28'
+  ANDROID_TARGET_SDK: '34'
+  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'release123' }}
+  KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'release' }}
+  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'release123' }}
+
+permissions:
+  contents: read
+  actions: write
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  validate:
+    name: Validate Project Structure
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate Gradle files
+        run: |
+          echo "🔍 Checking project structure..."
+          
+          if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
+            echo "❌ Root build.gradle not found!"
+            exit 1
+          fi
+          
+          if [ ! -f "app/build.gradle" ] && [ ! -f "app/build.gradle.kts" ]; then
+            echo "❌ App build.gradle not found!"
+            exit 1
+          fi
+          
+          if [ ! -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+            echo "❌ Gradle wrapper not found!"
+            exit 1
+          fi
+          
+          echo "✅ Project structure is valid"
+
+      - name: Validate AndroidManifest
+        run: |
+          echo "🔍 Checking AndroidManifest.xml..."
+          
+          if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
+            echo "❌ AndroidManifest.xml not found!"
+            exit 1
+          fi
+          
+          echo "✅ AndroidManifest.xml exists"
+
+      - name: Validate source files
+        run: |
+          echo "🔍 Checking source files..."
+          
+          if [ ! -d "app/src/main/java" ]; then
+            echo "❌ Source directory not found!"
+            exit 1
+          fi
+          
+          echo "✅ Source directory exists"
+
+  build:
+    name: Build APK (${{ github.event.inputs.build_type || 'release' }})
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 30
     
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-    
-    - name: Build APK
-      run: |
-        chmod +x gradlew
-        ./gradlew assembleRelease
-    
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-release
-        path: app/build/outputs/apk/release/
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_HOME }}
+          key: ${{ runner.os }}-android-sdk-${{ env.ANDROID_COMPILE_SDK }}
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: ${{ env.ANDROID_COMPILE_SDK }}
+          build-tools: ${{ env.ANDROID_BUILD_TOOLS }}
+          target: ${{ env.ANDROID_TARGET_SDK }}
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Generate debug keystore (for release signing)
+        if: github.event.inputs.build_type == 'release' || github.event_name == 'push'
+        run: |
+          echo "🔑 Generating signing key..."
+          keytool -genkeypair -v \
+            -keystore ${{ runner.temp }}/release.keystore \
+            -alias ${{ env.KEY_ALIAS }} \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass ${{ env.KEYSTORE_PASSWORD }} \
+            -keypass ${{ env.KEY_PASSWORD }} \
+            -dname "CN=Device Control, OU=Development, O=HugeCode, L=City, S=State, C=US" \
+            -noprompt
+          
+          echo "✅ Keystore generated"
+
+      - name: Build Debug APK
+        if: github.event.inputs.build_type == 'debug'
+        run: |
+          echo "🔨 Building debug APK..."
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --warning-mode all
+        
+        continue-on-error: false
+
+      - name: Build Release APK
+        if: github.event.inputs.build_type == 'release' || github.event_name == 'push'
+        run: |
+          echo "🔨 Building release APK..."
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            --warning-mode all \
+            -Pandroid.injected.signing.store.file=${{ runner.temp }}/release.keystore \
+            -Pandroid.injected.signing.store.password=${{ env.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ env.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ env.KEY_PASSWORD }}
+        
+        continue-on-error: false
+
+      - name: Run tests
+        run: |
+          echo "🧪 Running tests..."
+          ./gradlew test \
+            --no-daemon \
+            --continue
+        continue-on-error: true
+
+      - name: Run lint
+        run: |
+          echo "🔍 Running lint..."
+          ./gradlew lint \
+            --no-daemon \
+            --continue
+        continue-on-error: true
+
+      - name: List generated files
+        run: |
+          echo "📁 Generated files:"
+          find app/build/outputs -type f -name "*.apk" -exec ls -la {} \;
+
+      - name: Verify APK exists
+        run: |
+          APK_PATH=""
+          
+          if [ "${{ github.event.inputs.build_type || 'release' }}" == "debug" ]; then
+            APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          else
+            APK_PATH="app/build/outputs/apk/release/app-release.apk"
+          fi
+          
+          if [ ! -f "$APK_PATH" ]; then
+            echo "❌ APK not found at $APK_PATH"
+            exit 1
+          fi
+          
+          echo "✅ APK verified: $APK_PATH"
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+
+      - name: Get APK info
+        run: |
+          echo "📊 APK Information:"
+          APK_PATH="${{ env.APK_PATH }}"
+          
+          if command -v aapt &> /dev/null; then
+            aapt dump badging "$APK_PATH"
+          elif command -v apkanalyzer &> /dev/null; then
+            apkanalyzer manifest print "$APK_PATH"
+          fi
+          
+          echo "Size: $(du -h "$APK_PATH" | cut -f1)"
+
+      - name: Upload APK artifact
+        if: github.event.inputs.upload_artifact != 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-control-${{ github.event.inputs.build_type || 'release' }}-${{ github.sha }}
+          path: ${{ env.APK_PATH }}
+          compression-level: 9
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ github.sha }}
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results*.html
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload build reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports-${{ github.sha }}
+          path: |
+            app/build/reports/
+            build/reports/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Create release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APK_PATH }}
+          tag_name: v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
+          body: |
+            ## 📱 Device Control APK
+            
+            ### Build Information
+            - **Commit:** ${{ github.sha }}
+            - **Build number:** ${{ github.run_number }}
+            - **Build type:** ${{ github.event.inputs.build_type || 'release' }}
+            
+            ### Changes
+            ${{ github.event.head_commit.message }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Build failed!"
+          echo "Check logs for more information"
+          
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ Build completed successfully!"
+          echo "APK is ready for download"
+
+  summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "====================================="
+          echo "📊 BUILD SUMMARY"
+          echo "====================================="
+          echo "Status: ${{ needs.build.result }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Build type: ${{ github.event.inputs.build_type || 'release' }}"
+          echo "Timestamp: $(date)"
+          echo "====================================="
