@@ -8,10 +8,12 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
-import android.media.RingtoneManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.Settings
 import kotlinx.coroutines.*
 import org.java_websocket.client.WebSocketClient
@@ -22,8 +24,9 @@ import java.security.MessageDigest
 
 class DeviceService : Service() {
     private var webSocket: WebSocketClient? = null
-    private var mediaPlayer: MediaPlayer? = null
+    private var toneGenerator: ToneGenerator? = null
     private var audioManager: AudioManager? = null
+    private var vibrator: Vibrator? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
     override fun onBind(intent: Intent?): IBinder? = null
@@ -32,6 +35,7 @@ class DeviceService : Service() {
         super.onCreate()
         startForegroundService()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         connectToServer()
     }
     
@@ -121,15 +125,31 @@ class DeviceService : Service() {
     
     private fun playAlarm() {
         stopAlarm()
-        mediaPlayer = MediaPlayer.create(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
-        mediaPlayer?.isLooping = true
-        mediaPlayer?.start()
+        
+        val maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
+        audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, maxVolume, 0)
+        
+        toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+        toneGenerator?.startTone(ToneGenerator.TONE_SUP_ERROR, 2000)
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator?.vibrate(VibrationEffect.createOneShot(2000, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator?.vibrate(2000)
+        }
+        
+        serviceScope.launch {
+            delay(2000)
+            stopAlarm()
+        }
     }
     
     private fun stopAlarm() {
-        mediaPlayer?.stop()
-        mediaPlayer?.release()
-        mediaPlayer = null
+        toneGenerator?.stopTone()
+        toneGenerator?.release()
+        toneGenerator = null
+        vibrator?.cancel()
     }
     
     private fun lockScreen() {
