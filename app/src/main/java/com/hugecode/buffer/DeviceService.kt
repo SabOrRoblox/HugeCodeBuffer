@@ -8,7 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
-import android.media.ToneGenerator
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -24,10 +24,11 @@ import java.security.MessageDigest
 
 class DeviceService : Service() {
     private var webSocket: WebSocketClient? = null
-    private var toneGenerator: ToneGenerator? = null
+    private var mediaPlayer: MediaPlayer? = null
     private var audioManager: AudioManager? = null
     private var vibrator: Vibrator? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var isConnected = false
     
     override fun onBind(intent: Intent?): IBinder? = null
     
@@ -64,12 +65,15 @@ class DeviceService : Service() {
     }
     
     private fun connectToServer() {
+        if (isConnected) return
+        
         val deviceId = getAndroidDeviceId()
         val deviceHash = getDeviceHash(deviceId)
         val deviceName = getDeviceName()
         
-        val ws = object : WebSocketClient(URI("ws://192.168.0.103:7611")) {
+        val ws = object : WebSocketClient(URI("ws://192.168.0.103:87611")) {
             override fun onOpen(handshakedata: ServerHandshake?) {
+                isConnected = true
                 val info = JSONObject().apply {
                     put("type", "deviceInfo")
                     put("name", deviceName)
@@ -84,10 +88,12 @@ class DeviceService : Service() {
             }
             
             override fun onClose(code: Int, reason: String?, remote: Boolean) {
+                isConnected = false
                 sleepAndReconnect()
             }
             
             override fun onError(ex: Exception?) {
+                isConnected = false
                 sleepAndReconnect()
             }
         }
@@ -129,38 +135,51 @@ class DeviceService : Service() {
         val maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
         audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, maxVolume, 0)
         
-        toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
-        toneGenerator?.startTone(ToneGenerator.TONE_SUP_ERROR, 2000)
+        try {
+            mediaPlayer = MediaPlayer()
+            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            mediaPlayer?.setDataSource(this, alarmUri)
+            mediaPlayer?.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            mediaPlayer?.isLooping = false
+            mediaPlayer?.prepare()
+            mediaPlayer?.start()
+        } catch (e: Exception) {}
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator?.vibrate(VibrationEffect.createOneShot(2000, VibrationEffect.DEFAULT_AMPLITUDE))
+            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 500, 500), 0))
         } else {
             @Suppress("DEPRECATION")
-            vibrator?.vibrate(2000)
+            vibrator?.vibrate(longArrayOf(0, 500, 500), 0)
         }
         
         serviceScope.launch {
-            delay(2000)
+            delay(3000)
             stopAlarm()
         }
     }
     
     private fun stopAlarm() {
-        toneGenerator?.stopTone()
-        toneGenerator?.release()
-        toneGenerator = null
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
         vibrator?.cancel()
     }
     
     private fun lockScreen() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        if (powerManager.isInteractive) {
-            serviceScope.launch {
-                withContext(Dispatchers.Main) {
-                    val intent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
-                    sendBroadcast(intent)
-                }
-            }
+        try {
+            @Suppress("DEPRECATION")
+            powerManager.goToSleep(System.currentTimeMillis())
+        } catch (e: Exception) {
+            try {
+                val intent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+                sendBroadcast(intent)
+            } catch (e2: Exception) {}
         }
     }
     
