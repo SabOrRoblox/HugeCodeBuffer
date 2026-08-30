@@ -20,6 +20,7 @@ android {
             minifyEnabled true
             shrinkResources true
             zipAlignEnabled true
+            signingConfig null
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
