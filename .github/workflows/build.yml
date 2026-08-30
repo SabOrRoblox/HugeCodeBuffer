@@ -3,15 +3,6 @@ name: Build & Sign APK
 on:
   push:
     branches: [ main, master ]
-    paths:
-      - 'app/**'
-      - 'gradle/**'
-      - 'build.gradle'
-      - 'settings.gradle'
-      - 'gradle.properties'
-      - '.github/workflows/build.yml'
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
     inputs:
       build_type:
@@ -27,24 +18,16 @@ env:
   JAVA_VERSION: '17'
   ANDROID_COMPILE_SDK: '34'
   ANDROID_BUILD_TOOLS: '34.0.0'
-  ANDROID_TARGET_SDK: '34'
-  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'release123' }}
-  KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'release' }}
-  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'release123' }}
+  KEYSTORE_PASSWORD: 'release123'
+  KEY_ALIAS: 'release'
+  KEY_PASSWORD: 'release123'
 
 permissions:
   contents: write
-  packages: write
-  actions: write
-  checks: write
-  pull-requests: write
-  deployments: write
-  security-events: write
-  statuses: write
 
 jobs:
   build:
-    name: Build APK (${{ github.event.inputs.build_type || 'release' }})
+    name: Build APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
@@ -52,36 +35,40 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Set up JDK ${{ env.JAVA_VERSION }}
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
-          cache: 'gradle'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           api-level: ${{ env.ANDROID_COMPILE_SDK }}
           build-tools: ${{ env.ANDROID_BUILD_TOOLS }}
-          target: ${{ env.ANDROID_TARGET_SDK }}
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Generate debug keystore
+      - name: Build with error output
         run: |
-          echo "🔑 Generating signing key..."
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            2>&1 | tee build.log
+        continue-on-error: true
+
+      - name: Show Kotlin errors
+        if: failure()
+        run: |
+          echo "=== KOTLIN ERRORS ==="
+          grep -A 5 "e: " build.log || echo "No Kotlin errors found"
+          echo "=== FULL ERROR ==="
+          grep -B 2 -A 10 "FAILED" build.log || echo "No failed tasks"
+
+      - name: Generate keystore
+        run: |
           keytool -genkeypair -v \
             -keystore ${{ runner.temp }}/release.keystore \
             -alias ${{ env.KEY_ALIAS }} \
@@ -90,67 +77,20 @@ jobs:
             -validity 10000 \
             -storepass ${{ env.KEYSTORE_PASSWORD }} \
             -keypass ${{ env.KEY_PASSWORD }} \
-            -dname "CN=Device Control, OU=Development, O=HugeCode, L=City, S=State, C=US" \
+            -dname "CN=Device Control, OU=Dev, O=Dev, L=City, S=State, C=US" \
             -noprompt
-          
-          echo "✅ Keystore generated"
-
-      - name: Build Debug APK
-        if: github.event.inputs.build_type == 'debug'
-        run: |
-          echo "🔨 Building debug APK..."
-          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Build Release APK
-        if: github.event.inputs.build_type == 'release' || github.event_name == 'push'
         run: |
-          echo "🔨 Building release APK..."
-          ./gradlew assembleRelease --no-daemon --stacktrace \
+          ./gradlew assembleRelease --no-daemon \
             -Pandroid.injected.signing.store.file=${{ runner.temp }}/release.keystore \
             -Pandroid.injected.signing.store.password=${{ env.KEYSTORE_PASSWORD }} \
             -Pandroid.injected.signing.key.alias=${{ env.KEY_ALIAS }} \
             -Pandroid.injected.signing.key.password=${{ env.KEY_PASSWORD }}
 
-      - name: List generated APK files
-        run: |
-          echo "📁 Generated files:"
-          find app/build/outputs -type f -name "*.apk" -exec ls -la {} \; || echo "No APK found"
-
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: device-control-${{ github.event.inputs.build_type || 'release' }}
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
+          name: device-control
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
-
-      - name: Create release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && success()
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            app/build/outputs/apk/release/*.apk
-          tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
-          body: |
-            ## 📱 Device Control APK
-            
-            ### Build Information
-            - **Commit:** ${{ github.sha }}
-            - **Build number:** ${{ github.run_number }}
-            - **Build type:** ${{ github.event.inputs.build_type || 'release' }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build status
-        if: always()
-        run: |
-          if [ "${{ job.status }}" == "success" ]; then
-            echo "✅ Build completed successfully!"
-          else
-            echo "❌ Build failed!"
-            echo "Check logs for more information"
-          fi
