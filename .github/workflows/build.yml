@@ -33,7 +33,14 @@ env:
   KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'release123' }}
 
 permissions:
-  contents: read
+  contents: write
+  packages: write
+  actions: write
+  checks: write
+  pull-requests: write
+  deployments: write
+  security-events: write
+  statuses: write
 
 jobs:
   build:
