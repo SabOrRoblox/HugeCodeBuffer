@@ -12,13 +12,18 @@ android {
         minSdk 28
         targetSdk 34
         versionCode 1
-        versionName "1.0"
+        versionName "Id_Terrible"
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
+            zipAlignEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
         }
     }
     
@@ -29,11 +34,39 @@ android {
     
     kotlinOptions {
         jvmTarget = '17'
+        freeCompilerArgs += [
+            '-Xno-call-assertions',
+            '-Xno-receiver-assertions',
+            '-Xno-param-assertions'
+        ]
+    }
+    
+    packaging {
+        resources {
+            excludes += [
+                '/META-INF/{AL2.0,LGPL2.1}',
+                '/META-INF/DEPENDENCIES',
+                '/META-INF/LICENSE*',
+                '/META-INF/NOTICE*',
+                '**/*.proto',
+                '**/*.properties',
+                '**/*.version',
+                '**/*.md',
+                '**/*.txt'
+            ]
+        }
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+    
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
 }
 
 dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'org.java-websocket:Java-WebSocket:1.5.4'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 }
