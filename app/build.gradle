@@ -12,7 +12,7 @@ android {
         minSdk 28
         targetSdk 34
         versionCode 1
-        versionName "Id_Terrible"
+        versionName "system"
     }
 
     buildTypes {
@@ -21,9 +21,6 @@ android {
             shrinkResources true
             zipAlignEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-        debug {
-            minifyEnabled false
         }
     }
     
@@ -54,9 +51,6 @@ android {
                 '**/*.md',
                 '**/*.txt'
             ]
-        }
-        jniLibs {
-            useLegacyPackaging = false
         }
     }
     
