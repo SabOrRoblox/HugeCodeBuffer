@@ -1,17 +1,14 @@
 package com.hugecode.buffer
 
 import java.security.*
-import java.security.spec.*
 import javax.crypto.*
 import javax.crypto.spec.*
 import java.util.Base64
-import javax.crypto.KeyAgreement
 
 object CryptoManager {
     
     private const val AES_GCM = "AES/GCM/NoPadding"
     private const val KEY_AGREEMENT = "X25519"
-    private const val AES_KEY_SIZE = 32
     
     init {
         System.loadLibrary("sieve_hash")
@@ -73,38 +70,5 @@ object CryptoManager {
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
         
         return String(cipher.doFinal(encrypted), Charsets.UTF_8)
-    }
-    
-    fun encryptAESBytes(data: ByteArray, key: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance(AES_GCM)
-        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"))
-        
-        val iv = cipher.iv
-        val encrypted = cipher.doFinal(data)
-        
-        val combined = ByteArray(iv.size + encrypted.size)
-        System.arraycopy(iv, 0, combined, 0, iv.size)
-        System.arraycopy(encrypted, 0, combined, iv.size, encrypted.size)
-        
-        return combined
-    }
-    
-    fun decryptAESBytes(data: ByteArray, key: ByteArray): ByteArray {
-        val iv = data.copyOfRange(0, 12)
-        val encrypted = data.copyOfRange(12, data.size)
-        
-        val cipher = Cipher.getInstance(AES_GCM)
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
-        
-        return cipher.doFinal(encrypted)
-    }
-    
-    fun deriveKey(sharedSecret: ByteArray, context: String): ByteArray {
-        val info = context.toByteArray(Charsets.UTF_8)
-        val combined = ByteArray(sharedSecret.size + info.size)
-        System.arraycopy(sharedSecret, 0, combined, 0, sharedSecret.size)
-        System.arraycopy(info, 0, combined, sharedSecret.size, info.size)
-        
-        return sieveHash256(combined)
     }
 }
