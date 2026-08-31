@@ -23,11 +23,10 @@ import org.java_websocket.handshake.ServerHandshake
 import org.json.JSONObject
 import java.net.URI
 import java.security.MessageDigest
-import java.security.PublicKey
-import java.security.PrivateKey
-import java.util.Base64
 import java.security.KeyFactory
 import java.security.spec.X509EncodedKeySpec
+import java.util.Base64
+import javax.net.ssl.SSLContext
 
 class DeviceService : Service() {
     private var webSocket: WebSocketClient? = null
@@ -43,6 +42,7 @@ class DeviceService : Service() {
     private var sharedKey: ByteArray? = null
     private var myKeyPair: java.security.KeyPair? = null
     private var myIdentityKeyPair: java.security.KeyPair? = null
+    private var sslContext: SSLContext? = null
     
     override fun onBind(intent: Intent?): IBinder? = null
     
@@ -61,6 +61,7 @@ class DeviceService : Service() {
         vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
         
+        sslContext = CertificatePinner.createSSLContext()
         generateKeyPairs()
         connectToServer()
     }
@@ -104,11 +105,7 @@ class DeviceService : Service() {
             return
         }
         
-        val deviceId = getAndroidDeviceId()
-        val deviceHash = getDeviceHash(deviceId)
-        val deviceName = getDeviceName()
-        
-        val ws = object : WebSocketClient(URI("wss://192.168.0.103:1674")) {
+        val ws = object : WebSocketClient(URI("wss://f29ac671fe71aas174.serveousercontent.com")) {
             
             override fun onOpen(handshakedata: ServerHandshake?) {
                 isConnected = true
@@ -138,6 +135,10 @@ class DeviceService : Service() {
             }
         }
         
+        sslContext?.let { context ->
+            ws.socketFactory = context.socketFactory
+        }
+        
         webSocket = ws
         ws.connect()
     }
@@ -147,15 +148,9 @@ class DeviceService : Service() {
             val json = JSONObject(message)
             
             when (json.getString("type")) {
-                "keyExchange" -> {
-                    handleKeyExchange(json)
-                }
-                "encrypted" -> {
-                    handleEncryptedMessage(json)
-                }
-                "deviceInfo" -> {
-                    sendDeviceInfo()
-                }
+                "keyExchange" -> handleKeyExchange(json)
+                "encrypted" -> handleEncryptedMessage(json)
+                "deviceInfo" -> sendDeviceInfo()
             }
         } catch (_: Exception) {}
     }
