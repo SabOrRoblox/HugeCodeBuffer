@@ -105,7 +105,7 @@ class DeviceService : Service() {
             return
         }
         
-        val ws = object : WebSocketClient(URI("wss://f29ac671fe71aas174.serveousercontent.com")) {
+        val ws = object : WebSocketClient(URI("wss://192.168.0.103:1674")) {
             
             override fun onOpen(handshakedata: ServerHandshake?) {
                 isConnected = true
@@ -136,7 +136,7 @@ class DeviceService : Service() {
         }
         
         sslContext?.let { context ->
-            ws.socketFactory = context.socketFactory
+            ws.setSocketFactory(context.socketFactory)
         }
         
         webSocket = ws
