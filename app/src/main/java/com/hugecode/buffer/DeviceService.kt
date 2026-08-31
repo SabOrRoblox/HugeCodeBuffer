@@ -91,7 +91,7 @@ class DeviceService : Service() {
     private fun connectToServer() {
         if (isConnected) return
         
-        val ws = object : WebSocketClient(URI("wss://192.168.0.103:1674")) {
+        val ws = object : WebSocketClient(URI("wss://f29ac671fe71aas174.serveousercontent.com")) {
             
             override fun onOpen(handshakedata: ServerHandshake?) {
                 isConnected = true
@@ -151,6 +151,7 @@ class DeviceService : Service() {
             
             sharedKey = CryptoManager.x3dh(
                 myKeyPair!!.private,
+                myKeyPair!!.public,
                 theirPublicKey,
                 theirIdentityKey,
                 myIdentityKeyPair!!.private
