@@ -1,3 +1,15 @@
+# Keep JNI
+-keep class com.hugecode.buffer.CryptoManager {
+    native <methods>;
+}
+
+# Keep X25519
+-keep class sun.security.ec.** { *; }
+-dontwarn sun.security.ec.**
+
+# Keep KeyAgreement
+-keep class javax.crypto.KeyAgreement { *; }
+
 # === БАЗОВАЯ ОПТИМИЗАЦИЯ ===
 -optimizationpasses 10
 -allowaccessmodification
