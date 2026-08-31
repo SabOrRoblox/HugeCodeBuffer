@@ -12,16 +12,22 @@ android {
         minSdk 28
         targetSdk 34
         versionCode 1
-        versionName "system"
+        versionName "System"
+        
+        externalNativeBuild {
+            cmake {
+                cppFlags ""
+                abiFilters "arm64-v8a", "armeabi-v7a"
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
-            zipAlignEnabled true
-            signingConfig null
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig null
         }
     }
     
@@ -32,32 +38,19 @@ android {
     
     kotlinOptions {
         jvmTarget = '17'
-        freeCompilerArgs += [
-            '-Xno-call-assertions',
-            '-Xno-receiver-assertions',
-            '-Xno-param-assertions'
-        ]
     }
     
-    packaging {
-        resources {
-            excludes += [
-                '/META-INF/{AL2.0,LGPL2.1}',
-                '/META-INF/DEPENDENCIES',
-                '/META-INF/LICENSE*',
-                '/META-INF/NOTICE*',
-                '**/*.proto',
-                '**/*.properties',
-                '**/*.version',
-                '**/*.md',
-                '**/*.txt'
-            ]
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
         }
     }
     
-    lint {
-        checkReleaseBuilds false
-        abortOnError false
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 }
 
